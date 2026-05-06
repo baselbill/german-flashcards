@@ -280,22 +280,18 @@ body.in-study { padding-bottom: var(--rating-bar-h); }
   <button class="rating-btn again" id="rBtn1" disabled onclick="rateCurrent(1)">
     <span class="rating-label">Again</span>
     <span class="rating-shortcut">Key 1</span>
-    <span class="rating-interval" id="rInt1"></span>
   </button>
   <button class="rating-btn hard" id="rBtn2" disabled onclick="rateCurrent(3)">
     <span class="rating-label">Hard</span>
     <span class="rating-shortcut">Key 2</span>
-    <span class="rating-interval" id="rInt2"></span>
   </button>
   <button class="rating-btn good" id="rBtn3" disabled onclick="rateCurrent(4)">
     <span class="rating-label">Good</span>
     <span class="rating-shortcut">Key 3</span>
-    <span class="rating-interval" id="rInt3"></span>
   </button>
   <button class="rating-btn easy" id="rBtn4" disabled onclick="rateCurrent(5)">
     <span class="rating-label">Easy</span>
     <span class="rating-shortcut">Key 4</span>
-    <span class="rating-interval" id="rInt4"></span>
   </button>
 </div>
 
@@ -12965,7 +12961,6 @@ function updateRatingBar(card) {
   const state=SRS[card.id]||defaultState(), qs=[1,3,4,5];
   for (let i=0;i<4;i++) {
     document.getElementById("rBtn"+(i+1)).disabled=!session.flipped;
-    document.getElementById("rInt"+(i+1)).textContent=intervalLabel(state,qs[i]);
   }
 }
 function rateCurrent(q) {
