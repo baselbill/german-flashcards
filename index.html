@@ -257,6 +257,36 @@ body.in-study { padding-bottom: var(--rating-bar-h); }
   .heat-cell { width:14px; height:14px; }
   .rating-shortcut { display:none; }
 }
+
+/* ---- TIER BAR ---- */
+.tier-bar { padding:10px 0 14px; border-bottom:1px solid var(--rule-soft); margin-bottom:20px; }
+.tier-label { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--ink-soft); margin-bottom:6px; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+.tier-name { color:var(--gold); font-weight:500; }
+.tier-xp-meta { color:var(--ink-faint); }
+.tier-progress-track { height:4px; background:var(--rule-soft); position:relative; overflow:hidden; }
+.tier-progress-fill { position:absolute; inset:0 auto 0 0; background:var(--gold); transition:width 600ms cubic-bezier(.4,0,.2,1); }
+
+/* ---- BADGE GRID ---- */
+.badge-section { margin-top:20px; }
+.badges-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(88px,1fr)); gap:10px; margin:14px 0 28px; }
+.badge-item { display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 6px; border:1px solid var(--rule-soft); background:var(--paper-light); text-align:center; }
+.badge-item.unlocked { border-color:var(--gold); background:var(--gold-light); }
+.badge-item.locked { opacity:.45; filter:grayscale(1); }
+.badge-emoji { font-size:22px; line-height:1; }
+.badge-label { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); line-height:1.3; }
+.badge-item.unlocked .badge-label { color:var(--gold); }
+
+/* ---- BADGE UNLOCK NOTIFICATION (done screen) ---- */
+.badge-unlock-notif { margin:18px 0 0; padding:14px 18px; border:1px solid var(--gold); background:var(--gold-light); text-align:left; }
+.badge-unlock-title { font-family:var(--serif-display); font-size:14px; color:var(--gold); margin-bottom:10px; }
+.badge-unlock-row { display:flex; align-items:center; gap:10px; padding:4px 0; }
+.badge-unlock-info { display:flex; flex-direction:column; gap:2px; }
+.badge-desc { font-family:var(--serif-body); font-style:italic; font-size:13px; color:var(--ink-soft); }
+
+@media (max-width:720px) {
+  .badges-grid { grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:7px; }
+  .badge-emoji { font-size:18px; }
+}
 </style>
 </head>
 <body>
@@ -12650,6 +12680,107 @@ const STORAGE_KEY = "germanFlashcards.srs.v1";
 const CONFIG_KEY  = "germanFlashcards.config.v1";
 const STATS_KEY   = "germanFlashcards.stats.v1";
 
+/* ---- TIERS ---- */
+const TIERS = [
+  {num:1, name:"Anfänger",          threshold:0},
+  {num:2, name:"Lernender",         threshold:500},
+  {num:3, name:"Fortgeschrittener", threshold:2000},
+  {num:4, name:"Geübter",           threshold:5000},
+  {num:5, name:"Kenner",            threshold:10000},
+  {num:6, name:"Kundiger",          threshold:20000},
+  {num:7, name:"Meister",           threshold:40000},
+];
+function getTier(xp) {
+  let tier = TIERS[0];
+  for (const t of TIERS) { if (xp >= t.threshold) tier = t; }
+  const next = TIERS.find(t => t.threshold > xp) || null;
+  return { ...tier, next };
+}
+function goalStreak() {
+  let streak = 0;
+  const d = new Date();
+  while (true) {
+    const iso = d.toISOString().slice(0, 10);
+    if ((STATS.perDay[iso] || 0) >= CONFIG.dailyGoal) { streak++; d.setDate(d.getDate() - 1); }
+    else break;
+  }
+  return streak;
+}
+function _modComplete(m) {
+  return moduleCards(m).every(c => !!SRS[c.id]);
+}
+
+/* ---- BADGES ---- */
+const BADGE_DEFS = [
+  {id:"first_card",    emoji:"🃏", label:"Erste Karte",       desc:"Review your first card",         check:(st,se)=>Object.values(st.perDay||{}).reduce((a,b)=>a+b,0)>=1},
+  {id:"cards_100",     emoji:"📚", label:"Hundert Karten",    desc:"Review 100 cards total",         check:(st,se)=>Object.values(st.perDay||{}).reduce((a,b)=>a+b,0)>=100},
+  {id:"cards_500",     emoji:"📚", label:"Fünfhundert",       desc:"Review 500 cards total",         check:(st,se)=>Object.values(st.perDay||{}).reduce((a,b)=>a+b,0)>=500},
+  {id:"cards_1000",    emoji:"📚", label:"Tausend Karten",    desc:"Review 1,000 cards total",       check:(st,se)=>Object.values(st.perDay||{}).reduce((a,b)=>a+b,0)>=1000},
+  {id:"cards_5000",    emoji:"📚", label:"Fünftausend",       desc:"Review 5,000 cards total",       check:(st,se)=>Object.values(st.perDay||{}).reduce((a,b)=>a+b,0)>=5000},
+  {id:"streak_3",      emoji:"✦",  label:"Drei Tage",         desc:"3-day streak",                   check:(st)=>(st.streak||0)>=3},
+  {id:"streak_7",      emoji:"🔥", label:"Eine Woche",        desc:"7-day streak",                   check:(st)=>(st.streak||0)>=7},
+  {id:"streak_30",     emoji:"🔥", label:"Ein Monat",         desc:"30-day streak",                  check:(st)=>(st.streak||0)>=30},
+  {id:"streak_100",    emoji:"🔥", label:"Hundert Tage",      desc:"100-day streak",                 check:(st)=>(st.streak||0)>=100},
+  {id:"comeback",      emoji:"🦅", label:"Rückkehr",          desc:"Return after a 7+ day gap",      check:(st,se)=>!!(se&&se._cameBackAfterGap)},
+  {id:"mod_1",         emoji:"🗺️", label:"Überlebenskünstler",desc:"Learn all Module I cards",       check:()=>_modComplete(1)},
+  {id:"mod_2",         emoji:"☕", label:"Alltagskenner",     desc:"Learn all Module II cards",      check:()=>_modComplete(2)},
+  {id:"mod_3",         emoji:"🏠", label:"Daheim",            desc:"Learn all Module III cards",     check:()=>_modComplete(3)},
+  {id:"mod_4",         emoji:"🏙️", label:"Stadtkenner",       desc:"Learn all Module IV cards",      check:()=>_modComplete(4)},
+  {id:"mod_5",         emoji:"💼", label:"Berufsmensch",      desc:"Learn all Module V cards",       check:()=>_modComplete(5)},
+  {id:"mod_6",         emoji:"💚", label:"Wohlbefinden",      desc:"Learn all Module VI cards",      check:()=>_modComplete(6)},
+  {id:"mod_7",         emoji:"🌿", label:"Naturmensch",       desc:"Learn all Module VII cards",     check:()=>_modComplete(7)},
+  {id:"mod_8",         emoji:"🗳️", label:"Weltbürger",        desc:"Learn all Module VIII cards",    check:()=>_modComplete(8)},
+  {id:"mod_9",         emoji:"✒️", label:"Verfeinerung",      desc:"Learn all Module IX cards",      check:()=>_modComplete(9)},
+  {id:"mod_all",       emoji:"✨", label:"Vollständig",       desc:"Learn all 9 modules",            check:()=>[1,2,3,4,5,6,7,8,9].every(m=>_modComplete(m))},
+  {id:"perfect",       emoji:"💎", label:"Makellos",          desc:"100% Good/Easy session (≥10)",   check:(st,se)=>!!(se&&se.ratings.length>=10&&se.ratings.every(q=>q>=4))},
+  {id:"fluent",        emoji:"⚡", label:"Flüssig",           desc:"20+ Easy ratings in one session",check:(st,se)=>!!(se&&se.ratings.filter(q=>q===5).length>=20)},
+  {id:"rescue",        emoji:"🃏", label:"Gelernt!",          desc:"Easy after 3+ failures",         check:(st,se)=>!!(se&&se._rescuedCard)},
+  {id:"quality_10x80", emoji:"🎯", label:"Zielstrebig",       desc:"10 sessions with ≥80% accuracy", check:(st)=>(st.goodSessionCount||0)>=10},
+  {id:"goal_30days",   emoji:"🏅", label:"Disziplin",         desc:"Hit daily goal 30 days in a row",check:(st)=>(st.goalStreakMax||0)>=30},
+  {id:"long_mem",      emoji:"📅", label:"Langzeitgedächtnis",desc:"A card reaches 30-day interval", check:()=>Object.values(SRS).some(s=>(s.interval||0)>=30)},
+  {id:"early_bird",    emoji:"🌅", label:"Frühaufsteher",     desc:"Study before 8am",               check:(st,se)=>!!(se&&se._studyHour<8)},
+  {id:"night_owl",     emoji:"🌙", label:"Nachteule",         desc:"Study after 10pm",               check:(st,se)=>!!(se&&se._studyHour>=22)},
+  {id:"new_year",      emoji:"🎊", label:"Neujahrs-Lernen",   desc:"Study on January 1st",           check:(st,se)=>!!(se&&se._studyDate&&se._studyDate.slice(5)==="01-01")},
+];
+function hasBadge(id) { return (STATS.badges||[]).some(b=>b.id===id); }
+function checkBadges(sess) {
+  const alreadyUnlocked = new Set((STATS.badges||[]).map(b=>b.id));
+  const newly = [];
+  for (const def of BADGE_DEFS) {
+    if (alreadyUnlocked.has(def.id)) continue;
+    try { if (def.check(STATS, sess)) { STATS.badges.push({id:def.id, unlockedAt:isoToday()}); newly.push(def.id); } }
+    catch(e) { console.error("Badge check failed:", def.id, e); }
+  }
+  if (newly.length) saveStats(STATS);
+  return newly;
+}
+
+/* ---- XP & TIERS ---- */
+function showTierModal(tier) {
+  const existing = document.getElementById("tierModal");
+  if (existing) existing.remove();
+  const backdrop = el("div", {class:"modal-backdrop open", id:"tierModal"});
+  const box = el("div", {class:"modal", style:"text-align:center;"});
+  box.appendChild(el("div", {class:"empty-ornament"}, "✦"));
+  box.appendChild(el("h3", {}, "Du bist jetzt ein " + tier.name + "."));
+  if (tier.next) box.appendChild(el("p", {style:"color:var(--ink-soft);font-family:var(--serif-body);margin:0 0 20px;"}, "Noch " + (tier.next.threshold - STATS.xp) + " XP bis " + tier.next.name + "."));
+  const btn = el("button", {class:"btn"}, "Weiter");
+  btn.addEventListener("click", () => backdrop.remove());
+  box.appendChild(btn);
+  backdrop.appendChild(box);
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.remove(); });
+  document.body.appendChild(backdrop);
+}
+function awardXP(amount) {
+  if (amount <= 0) return;
+  const prevTier = getTier(STATS.xp || 0);
+  STATS.xp = (STATS.xp || 0) + amount;
+  saveStats(STATS);
+  showToast("+" + amount + " XP");
+  const newTier = getTier(STATS.xp);
+  if (newTier.num > prevTier.num) setTimeout(() => showTierModal(newTier), 400);
+}
+
 /* ---- SM-2 ---- */
 function isoToday(offset = 0) {
   const d = new Date(); d.setDate(d.getDate() + offset);
@@ -12693,7 +12824,7 @@ function loadSRS()    { try { return JSON.parse(localStorage.getItem(STORAGE_KEY
 function saveSRS(s)   { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {} }
 function loadConfig() { const d={newPerDay:10,dailyGoal:10,reviewLimit:120,frontMode:"de",lastModule:1}; try { return {...d,...JSON.parse(localStorage.getItem(CONFIG_KEY))}; } catch { return d; } }
 function saveConfig(c){ try { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); } catch {} }
-function loadStats()  { const d={lastStudyDate:null,streak:0,perDay:{}}; try { return {...d,...JSON.parse(localStorage.getItem(STATS_KEY))}; } catch { return d; } }
+function loadStats()  { const d={lastStudyDate:null,streak:0,perDay:{},xp:0,badges:[],graceBank:3,graceBankLastRegen:null,goalBonusDate:null,goodSessionCount:0,goalStreakMax:0}; try { return {...d,...JSON.parse(localStorage.getItem(STATS_KEY))}; } catch { return d; } }
 function saveStats(s) { try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch {} }
 
 let SRS    = loadSRS();
@@ -12722,12 +12853,45 @@ function buildQueue(m) {
 /* ---- STATS ---- */
 function recordCard() {
   const today = isoToday(), yesterday = isoToday(-1);
-  STATS.perDay[today] = (STATS.perDay[today]||0) + 1;
+  const prevCount = STATS.perDay[today] || 0;
+  STATS.perDay[today] = prevCount + 1;
+
   if (STATS.lastStudyDate !== today) {
-    STATS.streak = (STATS.lastStudyDate === yesterday || !STATS.lastStudyDate) ? (STATS.streak||0)+1 : 1;
+    // Weekly grace bank regen (1 per week, max 3)
+    if (STATS.graceBank < 3) {
+      const weekAgo = isoToday(-7);
+      const lastRegen = STATS.graceBankLastRegen;
+      if (!lastRegen || lastRegen <= weekAgo) {
+        STATS.graceBank = Math.min(3, (STATS.graceBank || 0) + 1);
+        STATS.graceBankLastRegen = today;
+      }
+    }
+
+    // Streak logic with grace bank
+    if (!STATS.lastStudyDate || STATS.lastStudyDate === yesterday) {
+      STATS.streak = (STATS.streak || 0) + 1;
+    } else {
+      const gapDays = Math.round((new Date(today) - new Date(STATS.lastStudyDate)) / 86400000);
+      if (gapDays >= 7 && session) session._cameBackAfterGap = true;
+      if ((STATS.graceBank || 0) > 0 && gapDays === 2) {
+        STATS.graceBank--;
+        STATS.streak = (STATS.streak || 0) + 1;
+      } else {
+        STATS.streak = 1;
+      }
+    }
     STATS.lastStudyDate = today;
   }
+
+  // Return daily goal bonus XP (+20) if this card first hits the goal today
+  let goalBonus = 0;
+  if (STATS.goalBonusDate !== today && prevCount < CONFIG.dailyGoal && STATS.perDay[today] >= CONFIG.dailyGoal) {
+    STATS.goalBonusDate = today;
+    goalBonus = 20;
+  }
+
   saveStats(STATS);
+  return goalBonus;
 }
 
 /* ---- ENCOURAGEMENT ---- */
@@ -12823,6 +12987,24 @@ function renderHome() {
   strip.appendChild(heatWrap);
   $app.appendChild(strip);
 
+  /* Tier / XP bar */
+  const tier=getTier(STATS.xp||0);
+  const tierBar=el("div",{class:"tier-bar"});
+  const tierLabel=el("div",{class:"tier-label"});
+  tierLabel.appendChild(el("span",{class:"tier-name"},tier.name));
+  if (tier.next) {
+    const progress=STATS.xp-tier.threshold, total=tier.next.threshold-tier.threshold;
+    tierLabel.appendChild(el("span",{class:"tier-xp-meta"}, ` · ${STATS.xp} / ${tier.next.threshold} XP`));
+    tierBar.appendChild(tierLabel);
+    const track=el("div",{class:"tier-progress-track"}), fill=el("div",{class:"tier-progress-fill"});
+    fill.style.width=Math.min(100,Math.round(progress/total*100))+"%";
+    track.appendChild(fill); tierBar.appendChild(track);
+  } else {
+    tierLabel.appendChild(el("span",{class:"tier-xp-meta"},` · ${STATS.xp} XP · Meisterstufe`));
+    tierBar.appendChild(tierLabel);
+  }
+  $app.appendChild(tierBar);
+
   /* Library */
   const section=el("section");
   section.appendChild(el("div",{class:"section-rule"},"Volume I — Library"));
@@ -12846,6 +13028,22 @@ function renderHome() {
     grid.appendChild(card);
   }
   section.appendChild(grid);
+
+  /* Badge grid */
+  const badgeSection=el("div",{class:"badge-section"});
+  badgeSection.appendChild(el("div",{class:"section-rule"},"Abzeichen — Achievements"));
+  const badgeGrid=el("div",{class:"badges-grid"});
+  const unlockedIds=new Set((STATS.badges||[]).map(b=>b.id));
+  for (const def of BADGE_DEFS) {
+    const unlocked=unlockedIds.has(def.id);
+    const item=el("div",{class:"badge-item"+(unlocked?" unlocked":" locked"),title:unlocked?def.desc:"Noch gesperrt — studiere weiter!"});
+    item.appendChild(el("span",{class:"badge-emoji"},def.emoji));
+    item.appendChild(el("span",{class:"badge-label"},unlocked?def.label:"—"));
+    badgeGrid.appendChild(item);
+  }
+  badgeSection.appendChild(badgeGrid);
+  section.appendChild(badgeSection);
+
   const sb=el("div",{class:"settings-bar"});
   sb.appendChild(el("button",{class:"tiny-link",onclick:openSettings},"⚙  Settings"));
   sb.appendChild(el("span",{style:"font-family:var(--mono);font-size:11px;color:var(--ink-faint);"},`${CARDS.length} cards · SM-2 spaced repetition`));
@@ -12917,6 +13115,20 @@ function renderStudy() {
 
 function renderDone() {
   document.body.classList.remove("in-study"); $bar.classList.remove("visible");
+
+  // Run badge checks once per session
+  if (session && !session._badgesChecked) {
+    session._badgesChecked = true;
+    if (session.ratings.length > 0) {
+      const good=session.ratings.filter(q=>q>=4).length;
+      if (good/session.ratings.length >= 0.8) STATS.goodSessionCount=(STATS.goodSessionCount||0)+1;
+      const gs=goalStreak();
+      if (gs > (STATS.goalStreakMax||0)) STATS.goalStreakMax=gs;
+      saveStats(STATS);
+    }
+    session._newBadges = checkBadges(session);
+  }
+
   const wrap=el("section",{class:"empty-state"});
   wrap.appendChild(el("div",{class:"empty-ornament"},"✦"));
   wrap.appendChild(el("h2",{},"Session complete."));
@@ -12931,6 +13143,25 @@ function renderDone() {
     }
     wrap.appendChild(summary);
   }
+
+  // Show newly unlocked badges
+  if (session && session._newBadges && session._newBadges.length > 0) {
+    const badgeNotif=el("div",{class:"badge-unlock-notif"});
+    badgeNotif.appendChild(el("div",{class:"badge-unlock-title"},"✦ Abzeichen freigeschaltet"));
+    for (const id of session._newBadges) {
+      const def=BADGE_DEFS.find(b=>b.id===id);
+      if (!def) continue;
+      const row=el("div",{class:"badge-unlock-row"});
+      row.appendChild(el("span",{class:"badge-emoji"},def.emoji));
+      const info=el("div",{class:"badge-unlock-info"});
+      info.appendChild(el("div",{class:"badge-label"},def.label));
+      info.appendChild(el("div",{class:"badge-desc"},def.desc));
+      row.appendChild(info);
+      badgeNotif.appendChild(row);
+    }
+    wrap.appendChild(badgeNotif);
+  }
+
   const done=todayCount(), goal=CONFIG.dailyGoal;
   wrap.appendChild(el("p",{},done>=goal?`✦ Daily goal of ${goal} cards reached!`:`${done} of ${goal} cards today — ${goal-done} more to go.`));
   const remaining=dueCardsFor(view.module).length+Math.min(newCardsFor(view.module).length,CONFIG.newPerDay);
@@ -12945,7 +13176,8 @@ function renderDone() {
 function startStudy(m) {
   CONFIG.lastModule=m; saveConfig(CONFIG);
   view={name:"study",module:m};
-  session={queue:buildQueue(m),idx:0,flipped:false,ratings:[]};
+  const _now=new Date();
+  session={queue:buildQueue(m),idx:0,flipped:false,ratings:[],_studyHour:_now.getHours(),_studyDate:isoToday(),_cameBackAfterGap:false,_rescuedCard:false,_badgesChecked:false,_newBadges:[]};
   render();
 }
 function exitStudy() {
@@ -12966,8 +13198,13 @@ function updateRatingBar(card) {
 function rateCurrent(q) {
   if (!session||!session.flipped) return;
   const card=session.queue[session.idx];
-  SRS[card.id]=applySM2(SRS[card.id]||defaultState(),q); saveSRS(SRS);
-  session.ratings.push(q); session.flipped=false; recordCard();
+  const prevState=SRS[card.id]||defaultState();
+  if (q===5 && (prevState.lapses||0)>=3) session._rescuedCard=true;
+  SRS[card.id]=applySM2(prevState,q); saveSRS(SRS);
+  session.ratings.push(q); session.flipped=false;
+  const goalBonus=recordCard();
+  const xpMap={1:0,3:1,4:3,5:5};
+  awardXP((xpMap[q]||0)+goalBonus);
   if (q<3) { const t=Math.min(session.queue.length,session.idx+1+5+Math.floor(Math.random()*4)); session.queue.splice(t,0,card); }
   session.idx++; renderMeta(); render();
 }
@@ -12992,13 +13229,14 @@ document.getElementById("settingsSave").addEventListener("click",()=>{
 });
 document.getElementById("resetBtn").addEventListener("click",()=>{
   if(!confirm("Erase all progress? This cannot be undone."))return;
-  SRS={}; STATS={lastStudyDate:null,streak:0,perDay:{}}; saveSRS(SRS); saveStats(STATS);
+  SRS={}; STATS={lastStudyDate:null,streak:0,perDay:{},xp:0,badges:[],graceBank:3,graceBankLastRegen:null,goalBonusDate:null,goodSessionCount:0,goalStreakMax:0}; saveSRS(SRS); saveStats(STATS);
   closeSettings(); showToast("Progress reset."); render();
 });
 
 /* ---- KEYBOARD ---- */
 document.addEventListener("keydown",e=>{
   if(document.getElementById("settingsModal").classList.contains("open")){if(e.key==="Escape")closeSettings();return;}
+  if(e.key==="Escape"){const tm=document.getElementById("tierModal");if(tm){tm.remove();return;}}
   if(view.name!=="study")return;
   if(e.key===" "||e.key==="Enter"){e.preventDefault();if(!session.flipped)flipCard(document.querySelector(".flashcard"));return;}
   if(session.flipped){if(e.key==="1")rateCurrent(1);else if(e.key==="2")rateCurrent(3);else if(e.key==="3")rateCurrent(4);else if(e.key==="4")rateCurrent(5);}
